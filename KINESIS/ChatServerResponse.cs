@@ -10,7 +10,8 @@ public class ChatServerResponse
     public const short WhisperFailed = 0x0009;
     public const short ClientStatusUpdated = 0x000C;
     public const short WhisperedToClanmates = 0x0013;
-    public const short ClanWhisperFailed = 0x0014;
+    public const short ClanWhisperFailed = 0x0014; // Corrected ID
+    public const short InstantMessageReceived = 0x001C; // Added IM
     public const short WhisperedToBuddies = 0x0020;
     public const short ChatModeAutoResponse = 0x0067;
     public const short PlayerCount = 0x0068;

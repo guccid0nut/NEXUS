@@ -152,6 +152,8 @@ public class ClientChatSession(TCPServer server, IServiceProvider serviceProvide
 
     public void Terminate()
     {
+        if (Account == null) return;
+
         // Get All Chat Channels The Client Is A Member Of
         List<ChatChannel> channels = [.. Context.ChatChannels.Values.Where(channel => channel.Members.ContainsKey(Account.Name))];
 

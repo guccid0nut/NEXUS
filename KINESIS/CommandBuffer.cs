@@ -76,4 +76,20 @@ public class CommandBuffer
         Buffer[finalWriteOffset - 1] = 0;
         Size = finalWriteOffset;
     }
+    public void WritePacketString(string value)
+    {
+        byte[] data = System.Text.Encoding.UTF8.GetBytes(value);
+        if (data.Length > short.MaxValue) throw new Exception("String too long for packet string (max 32767 bytes)");
+        
+        WriteInt16((short)data.Length);
+        
+        int finalWriteOffset = Size + data.Length;
+        if (Buffer.Length < finalWriteOffset)
+        {
+            Array.Resize(ref Buffer, Math.Max(Buffer.Length + GROW_SIZE, finalWriteOffset));
+        }
+
+        Array.Copy(data, 0, Buffer, Size, data.Length);
+        Size = finalWriteOffset;
+    }
 }

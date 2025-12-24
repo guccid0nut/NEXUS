@@ -228,6 +228,19 @@ public class ChatSession(TCPServer server, IServiceProvider serviceProvider) : T
 
         short messageLength = (short)buffer.Size;
 
+        // DEBUG: Log Outgoing 0x001C Packets
+        if (buffer.Size >= 2)
+        {
+            ushort cmd = BitConverter.ToUInt16(buffer.Buffer, 0);
+            if (cmd == 0x001C)
+            {
+                string hex = BitConverter.ToString(buffer.Buffer, 0, messageLength).Replace("-", " ");
+                Log.Error("DEBUG: Sending 0x001C Payload ({Length} bytes): {Hex}", messageLength, hex);
+            }
+        }
+
+
+
         byte[] messageLengthBytes = BitConverter.GetBytes(messageLength);
         byte[] messageBytes = new byte[messageLengthBytes.Length + messageLength];
 
