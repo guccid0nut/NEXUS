@@ -9,6 +9,9 @@
             "environmentVariables": {
                 "APPLICATION_URL": "http://localhost:55555",
                 "ASPNETCORE_ENVIRONMENT": "Development",
+                "CHAT_SERVER_HOST": "localhost",
+                "CHAT_SERVER_PORT_MATCH_SERVER": "11032",
+                "CHAT_SERVER_PORT_MATCH_SERVER_MANAGER": "11033",
                 "DOTNET_ENVIRONMENT": "Development"
             },
             "dotnetRunMessages": true

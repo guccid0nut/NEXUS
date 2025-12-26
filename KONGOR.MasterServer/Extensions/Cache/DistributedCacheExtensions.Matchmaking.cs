@@ -107,6 +107,7 @@ public static partial class DistributedCacheExtensions
     }
 
     private const string MatchServersKey = "MATCH-SERVERS";
+    private const string MatchSessionsKey = "MATCH-SESSIONS";
 
     /// <summary>
     ///     Sets the specified fields to their respective values in the hash stored at key.
@@ -116,8 +117,12 @@ public static partial class DistributedCacheExtensions
     public static async Task SetMatchServer(this IDatabase distributedCacheStore, string hostAccountName, MatchServer matchServer)
     {
         string serializedMatchServer = JsonSerializer.Serialize(matchServer);
+        string hashField = $"{hostAccountName}:{matchServer.Instance}";
 
-        await distributedCacheStore.HashSetAsync(MatchServersKey, [new HashEntry($"{hostAccountName}:{matchServer.Instance}", serializedMatchServer)]);
+        await distributedCacheStore.HashSetAsync(MatchServersKey, [new HashEntry(hashField, serializedMatchServer)]);
+        
+        // Optimize: Update Session Index
+        await distributedCacheStore.HashSetAsync(MatchSessionsKey, [new HashEntry(matchServer.Cookie, hashField)]);
     }
 
     public static async Task<List<MatchServer>> GetMatchServers(this IDatabase distributedCacheStore)
@@ -144,14 +149,17 @@ public static partial class DistributedCacheExtensions
 
     public static async Task<MatchServer?> GetMatchServerBySessionCookie(this IDatabase distributedCacheStore, string sessionCookie)
     {
-        HashEntry[] serializedMatchServers = await distributedCacheStore.HashGetAllAsync(MatchServersKey);
+        // New O(1) Lookup
+        RedisValue hashField = await distributedCacheStore.HashGetAsync(MatchSessionsKey, sessionCookie);
 
-        List<MatchServer> matchServers = [.. serializedMatchServers
-            .Select(entry => JsonSerializer.Deserialize<MatchServer>(entry.Value.ToString())).OfType<MatchServer>()];
+        if (hashField.IsNullOrEmpty)
+            return null;
 
-        MatchServer? matchServer = matchServers.SingleOrDefault(server => server.Cookie.Equals(sessionCookie));
-
-        return matchServer;
+        RedisValue serializedMatchServer = await distributedCacheStore.HashGetAsync(MatchServersKey, hashField);
+        
+        return serializedMatchServer.IsNullOrEmpty 
+            ? null 
+            : JsonSerializer.Deserialize<MatchServer>(serializedMatchServer.ToString());
     }
 
     public static async Task<List<MatchServer>> GetMatchServersByAccountName(this IDatabase distributedCacheStore, string hostAccountName)
@@ -194,6 +202,7 @@ public static partial class DistributedCacheExtensions
             string hashField = $"{matchServer.HostAccountName}:{matchServer.Instance}";
 
             await distributedCacheStore.HashDeleteAsync(MatchServersKey, hashField);
+            await distributedCacheStore.HashDeleteAsync(MatchSessionsKey, matchServer.Cookie); // Clean up index
 
             matchServer.MatchServerManager?.MatchServers.Remove(matchServer);
 

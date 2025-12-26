@@ -431,4 +431,25 @@ public partial class ServerRequesterController
         Dictionary<string, object> response = new();
         return Ok(PhpSerialization.Serialize(response));
     }
+    private async Task<IActionResult> HandleShutdown()
+    {
+        string? session = Request.Query["session"];
+
+        if (session is null)
+            session = Request.Form["session"];
+
+        if (session is null)
+            return BadRequest(@"Missing Value For Parameter ""session""");
+
+        MatchServer? matchServer = await DistributedCache.GetMatchServerBySessionCookie(session);
+
+        if (matchServer is null)
+            return Ok(); // Server already gone or unknown
+
+        await DistributedCache.RemoveMatchServerByID(matchServer.ID);
+        
+        Logger.LogInformation(@"Server ID ""{MatchServerID}"" Has Been Shut Down By Remote Request", matchServer.ID);
+
+        return Ok();
+    }
 }
