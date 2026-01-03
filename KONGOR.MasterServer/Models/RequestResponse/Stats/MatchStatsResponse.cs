@@ -28,10 +28,21 @@ public class MatchStatsResponse
     public required List<MatchSummary> MatchSummary { get; set; }
 
     /// <summary>
+    ///     A dictionary of player statistics for the match, keyed by the player's account ID.
+    /// </summary>
+    [PhpProperty("match_player_stats")]
+    public required Dictionary<int, PlayerStatistics> PlayerStatistics { get; set; }
+
+    /// <summary>
     ///     A dictionary of player inventories for the match, keyed by the player's account ID.
     /// </summary>
     [PhpProperty("inventory")]
-    public required Dictionary<int, Inventory> Inventories { get; set; }
+    public required Dictionary<int, PlayerInventory> PlayerInventories { get; set; }
+
+    /// <summary>
+    ///     Mastery details for the hero played in the match.
+    /// </summary>
+    public required MatchMastery MatchMastery { get; set; }
 
     /// <summary>
     ///     Tokens for the Kros Dice random ability draft that players can use while dead or in spawn in a Kros Mode match.
@@ -1922,7 +1933,667 @@ public class MatchSummary
     public required string AwardHighestCreepScore { get; set; }
 }
 
-public class Inventory
+public class MatchMastery(string heroIdentifier, int currentMasteryExperience, int matchMasteryExperience, int bonusExperience)
+{
+    // TODO: Set Missing Properties Once Database Entities Are Available
+
+    //public class MatchMastery(MasteryRewards rewards)
+    //{
+    //    MasteryExperienceBoostProductCount = rewards.MasteryBoostsOwned;
+    //    MasteryExperienceSuperBoostProductCount = rewards.MasterySuperBoostsOwned;
+    //    MasteryExperienceHeroesCount = rewards.MasteryMaxLevelHeroesCount;
+    //}
+
+    /// <summary>
+    ///     The identifier of the hero, in the format Hero_{Snake_Case_Name}.
+    /// </summary>
+    [PhpProperty("cli_name")]
+    public required string HeroIdentifier { get; init; } = heroIdentifier;
+
+    /// <summary>
+    ///     The hero's original mastery experience before the match.
+    ///     This is the current mastery level progress persisted to the database.
+    /// </summary>
+    [PhpProperty("mastery_exp_original")]
+    public required int CurrentMasteryExperience { get; init; } = currentMasteryExperience;
+
+    /// <summary>
+    ///     The base mastery experience earned during the match.
+    ///     Calculated from match duration, map, match type, and win/loss status.
+    ///     Does not include bonuses or boosts.
+    /// </summary>
+    [PhpProperty("mastery_exp_match")]
+    public required int MatchMasteryExperience { get; init; } = matchMasteryExperience;
+
+    /// <summary>
+    ///     Additional mastery experience bonus from map-specific multipliers.
+    ///     Applied as a percentage multiplier to the base experience.
+    /// </summary>
+    [PhpProperty("mastery_exp_bonus")]
+    public required int MasteryExperienceBonus { get; init; } = 0;
+
+    /// <summary>
+    ///     The additional mastery experience gained from applying a regular mastery boost consumable.
+    ///     Set to zero initially when match results are calculated.
+    ///     Only populated with a non-zero value after the player applies a mastery boost product.
+    /// </summary>
+    [PhpProperty("mastery_exp_boost")]
+    public required int MasteryExperienceBoost { get; init; } = 0;
+
+    /// <summary>
+    ///     The additional mastery experience gained from applying a super mastery boost consumable.
+    ///     Set to zero initially when match results are calculated.
+    ///     Only populated with a non-zero value after the player applies a super mastery boost product.
+    /// </summary>
+    [PhpProperty("mastery_exp_super_boost")]
+    public required int MasteryExperienceSuperBoost { get; init; } = 0;
+
+    /// <summary>
+    ///     The number of heroes the account has reached maximum mastery level with.
+    ///     Used to calculate the "max_heroes_addon" bonus multiplier.
+    /// </summary>
+    [PhpProperty("mastery_exp_heroes_count")]
+    public required int MasteryExperienceMaximumLevelHeroesCount { get; init; }
+
+    /// <summary>
+    ///     Bonus mastery experience awarded based on the number of max-level heroes owned.
+    ///     Maps to "mastery_maxlevel_addon" in "match_stats_v2.lua".
+    /// </summary>
+    [PhpProperty("mastery_exp_heroes_addon")]
+    public required int MasteryExperienceHeroesBonus { get; init; } = bonusExperience;
+
+    /// <summary>
+    ///     The potential experience that can be gained by using a regular mastery boost.
+    ///     Displayed when hovering over the mastery boost button in the UI.
+    /// </summary>
+    [PhpProperty("mastery_exp_to_boost")]
+    public required int MasteryExperienceToBoost { get; init; } = (matchMasteryExperience + bonusExperience) * 2;
+
+    /// <summary>
+    ///     Special event bonus mastery experience granted during promotional periods.
+    ///     Typically zero unless an admin-configured mastery experience event is active.
+    /// </summary>
+    [PhpProperty("mastery_exp_event")]
+    public required int MasteryExperienceEventBonus { get; init; } = 0;
+
+    /// <summary>
+    ///     Setting this value to FALSE disables using or purchasing regular mastery boosts.
+    ///     Some use cases for FALSE would be: 1) the hero has reached the maximum mastery level, 2) a mastery experience boost has already been used, 3) the map/mode combination is not eligible for accumulating mastery experience.
+    /// </summary>
+    [PhpProperty("mastery_canboost")]
+    public required bool MasteryExperienceCanBoost { get; set; } = true;
+
+    /// <summary>
+    ///     Setting this value to FALSE disables using or purchasing super mastery boosts.
+    ///     Some use cases for FALSE would be: 1) the hero has reached the maximum mastery level, 2) a mastery experience boost has already been used, 3) the map/mode combination is not eligible for accumulating mastery experience.
+    /// </summary>
+    [PhpProperty("mastery_super_canboost")]
+    public required bool MasteryExperienceCanSuperBoost { get; set; } = true;
+
+    /// <summary>
+    ///     The product ID for regular mastery boost purchases (typically 3609 for "m.Mastery Boost").
+    ///     Used when the player clicks to purchase a mastery boost from the match rewards screen.
+    /// </summary>
+    [PhpProperty("mastery_boost_product_id")]
+    public required int MasteryExperienceBoostProductIdentifier { get; init; } = 3609; // m.Mastery Boost
+
+    /// <summary>
+    ///     The product ID for super mastery boost purchases (typically 4605 for "m.Super boost").
+    ///     Referenced but not directly purchasable from the standard match rewards UI.
+    /// </summary>
+    [PhpProperty("mastery_super_boost_product_id")]
+    public required int MasteryExperienceSuperBoostProductIdentifier { get; init; } = 4605; // m.Super boost
+
+    /// <summary>
+    ///     The number of regular mastery boost products the player currently owns.
+    ///     Retrieved from the account's owned upgrades/products list.
+    /// </summary>
+    [PhpProperty("mastery_boostnum")]
+    public required int MasteryExperienceBoostProductCount { get; init; }
+
+    /// <summary>
+    ///     The number of super mastery boost products the player currently owns.
+    ///     Retrieved from the account's owned upgrades/products list.
+    /// </summary>
+    [PhpProperty("mastery_super_boostnum")]
+    public required int MasteryExperienceSuperBoostProductCount { get; init; }
+}
+
+public class PlayerStatistics
+{
+    /// <summary>
+    ///     The unique identifier for the match.
+    /// </summary>
+    [PhpProperty("match_id")]
+    public required int MatchID { get; set; }
+
+    /// <summary>
+    ///     The player's account ID.
+    /// </summary>
+    [PhpProperty("account_id")]
+    public required int AccountID { get; set; }
+
+    /// <summary>
+    ///     The account name (nickname) of the player.
+    /// </summary>
+    [PhpProperty("nickname")]
+    public required string AccountName { get; set; }
+
+    /// <summary>
+    ///     The clan ID of the player's clan, or "0" if the player is not in a clan.
+    /// </summary>
+    [PhpProperty("clan_id")]
+    public required string ClanID { get; set; }
+
+    /// <summary>
+    ///     The unique identifier of the hero played in the match.
+    /// </summary>
+    [PhpProperty("hero_id")]
+    public required string HeroID { get; set; }
+
+    /// <summary>
+    ///     The lobby position of the player (0-9), indicating their slot in the pre-match lobby.
+    /// </summary>
+    [PhpProperty("position")]
+    public required string Position { get; set; }
+
+    /// <summary>
+    ///     The team the player was on ("1" for Legion, "2" for Hellbourne).
+    /// </summary>
+    [PhpProperty("team")]
+    public required string Team { get; set; }
+
+    /// <summary>
+    ///     The final hero level reached by the player in the match (1-25).
+    /// </summary>
+    [PhpProperty("level")]
+    public required string Level { get; set; }
+
+    /// <summary>
+    ///     The number of wins on the player's account before this match.
+    /// </summary>
+    [PhpProperty("wins")]
+    public required string Wins { get; set; }
+
+    /// <summary>
+    ///     The number of losses on the player's account before this match.
+    /// </summary>
+    [PhpProperty("losses")]
+    public required string Losses { get; set; }
+
+    /// <summary>
+    ///     The number of conceded matches on the player's account before this match.
+    /// </summary>
+    [PhpProperty("concedes")]
+    public required string Concedes { get; set; }
+
+    /// <summary>
+    ///     The number of concede votes the player cast during the match.
+    /// </summary>
+    [PhpProperty("concedevotes")]
+    public required string ConcedeVotes { get; set; }
+
+    /// <summary>
+    ///     The number of times the player bought back into the match after dying.
+    /// </summary>
+    [PhpProperty("buybacks")]
+    public required string Buybacks { get; set; }
+
+    /// <summary>
+    ///     The number of disconnections on the player's account before this match.
+    /// </summary>
+    [PhpProperty("discos")]
+    public required string Disconnections { get; set; }
+
+    /// <summary>
+    ///     The number of times the player was kicked from matches on their account before this match.
+    /// </summary>
+    [PhpProperty("kicked")]
+    public required string Kicked { get; set; }
+
+    /// <summary>
+    ///     The player's Public Skill Rating (PSR) before this match.
+    /// </summary>
+    [PhpProperty("pub_skill")]
+    public required string PublicSkill { get; set; }
+
+    /// <summary>
+    ///     The number of public matches played on the player's account before this match.
+    /// </summary>
+    [PhpProperty("pub_count")]
+    public required string PublicCount { get; set; }
+
+    /// <summary>
+    ///     The player's Automatic Matchmaking (AMM) solo rating before this match.
+    /// </summary>
+    [PhpProperty("amm_solo_rating")]
+    public required string AMMSoloRating { get; set; }
+
+    /// <summary>
+    ///     The number of AMM solo matches played on the player's account before this match.
+    /// </summary>
+    [PhpProperty("amm_solo_count")]
+    public required string AMMSoloCount { get; set; }
+
+    /// <summary>
+    ///     The player's Automatic Matchmaking (AMM) team rating before this match.
+    /// </summary>
+    [PhpProperty("amm_team_rating")]
+    public required string AMMTeamRating { get; set; }
+
+    /// <summary>
+    ///     The number of AMM team matches played on the player's account before this match.
+    /// </summary>
+    [PhpProperty("amm_team_count")]
+    public required string AMMTeamCount { get; set; }
+
+    /// <summary>
+    ///     The player's average score across all matches before this match.
+    /// </summary>
+    [PhpProperty("avg_score")]
+    public required string AverageScore { get; set; }
+
+    /// <summary>
+    ///     The number of enemy hero kills achieved by the player in the match.
+    /// </summary>
+    [PhpProperty("herokills")]
+    public required string HeroKills { get; set; }
+
+    /// <summary>
+    ///     The total damage dealt to enemy heroes by the player in the match.
+    /// </summary>
+    [PhpProperty("herodmg")]
+    public required string HeroDamage { get; set; }
+
+    /// <summary>
+    ///     The total experience gained from killing or assisting in killing enemy heroes.
+    /// </summary>
+    [PhpProperty("heroexp")]
+    public required string HeroExperience { get; set; }
+
+    /// <summary>
+    ///     The total gold earned from killing or assisting in killing enemy heroes.
+    /// </summary>
+    [PhpProperty("herokillsgold")]
+    public required string HeroKillsGold { get; set; }
+
+    /// <summary>
+    ///     The number of assists (participating in hero kills without landing the final blow) achieved by the player.
+    /// </summary>
+    [PhpProperty("heroassists")]
+    public required string HeroAssists { get; set; }
+
+    /// <summary>
+    ///     The number of times the player died in the match.
+    /// </summary>
+    [PhpProperty("deaths")]
+    public required string Deaths { get; set; }
+
+    /// <summary>
+    ///     The total gold lost by the player due to deaths in the match.
+    /// </summary>
+    [PhpProperty("goldlost2death")]
+    public required string GoldLostToDeath { get; set; }
+
+    /// <summary>
+    ///     The total time in seconds the player spent dead (waiting to respawn) during the match.
+    /// </summary>
+    [PhpProperty("secs_dead")]
+    public required string SecondsDead { get; set; }
+
+    /// <summary>
+    ///     The number of friendly team creeps killed by the player (last-hitting own creeps for gold/experience).
+    /// </summary>
+    [PhpProperty("teamcreepkills")]
+    public required string TeamCreepKills { get; set; }
+
+    /// <summary>
+    ///     The total damage dealt to friendly team creeps by the player.
+    /// </summary>
+    [PhpProperty("teamcreepdmg")]
+    public required string TeamCreepDamage { get; set; }
+
+    /// <summary>
+    ///     The total experience gained from killing friendly team creeps.
+    /// </summary>
+    [PhpProperty("teamcreepexp")]
+    public required string TeamCreepExperience { get; set; }
+
+    /// <summary>
+    ///     The total gold earned from killing friendly team creeps.
+    /// </summary>
+    [PhpProperty("teamcreepgold")]
+    public required string TeamCreepGold { get; set; }
+
+    /// <summary>
+    ///     The number of neutral creeps killed by the player (jungle creeps).
+    /// </summary>
+    [PhpProperty("neutralcreepkills")]
+    public required string NeutralCreepKills { get; set; }
+
+    /// <summary>
+    ///     The total damage dealt to neutral creeps by the player.
+    /// </summary>
+    [PhpProperty("neutralcreepdmg")]
+    public required string NeutralCreepDamage { get; set; }
+
+    /// <summary>
+    ///     The total experience gained from killing neutral creeps.
+    /// </summary>
+    [PhpProperty("neutralcreepexp")]
+    public required string NeutralCreepExperience { get; set; }
+
+    /// <summary>
+    ///     The total gold earned from killing neutral creeps.
+    /// </summary>
+    [PhpProperty("neutralcreepgold")]
+    public required string NeutralCreepGold { get; set; }
+
+    /// <summary>
+    ///     The total damage dealt to enemy buildings (towers, barracks, base structures) by the player.
+    /// </summary>
+    [PhpProperty("bdmg")]
+    public required string BuildingDamage { get; set; }
+
+    /// <summary>
+    ///     The total experience gained from damaging or destroying enemy buildings.
+    /// </summary>
+    [PhpProperty("bdmgexp")]
+    public required string BuildingExperience { get; set; }
+
+    /// <summary>
+    ///     The number of enemy buildings (towers, barracks) destroyed by the player.
+    /// </summary>
+    [PhpProperty("razed")]
+    public required string BuildingsRazed { get; set; }
+
+    /// <summary>
+    ///     The total gold earned from damaging or destroying enemy buildings.
+    /// </summary>
+    [PhpProperty("bgold")]
+    public required string BuildingGold { get; set; }
+
+    /// <summary>
+    ///     The number of enemy creeps denied by the player (last-hitting enemy creeps to prevent opponents from gaining gold/experience).
+    /// </summary>
+    [PhpProperty("denies")]
+    public required string Denies { get; set; }
+
+    /// <summary>
+    ///     The total experience denied to opponents through denying enemy creeps.
+    /// </summary>
+    [PhpProperty("exp_denied")]
+    public required string ExperienceDenied { get; set; }
+
+    /// <summary>
+    ///     The total gold accumulated by the player at the end of the match.
+    /// </summary>
+    [PhpProperty("gold")]
+    public required string Gold { get; set; }
+
+    /// <summary>
+    ///     The total gold spent by the player on items during the match.
+    /// </summary>
+    [PhpProperty("gold_spent")]
+    public required string GoldSpent { get; set; }
+
+    /// <summary>
+    ///     The total experience gained by the player during the match.
+    /// </summary>
+    [PhpProperty("exp")]
+    public required string Experience { get; set; }
+
+    /// <summary>
+    ///     The total number of actions performed by the player during the match (clicks, commands, ability usage, etc.).
+    /// </summary>
+    [PhpProperty("actions")]
+    public required string Actions { get; set; }
+
+    /// <summary>
+    ///     The total time in seconds the player was actively playing in the match.
+    /// </summary>
+    [PhpProperty("secs")]
+    public required string Seconds { get; set; }
+
+    /// <summary>
+    ///     The number of consumable items (potions, wards, teleport scrolls, etc.) purchased by the player.
+    /// </summary>
+    [PhpProperty("consumables")]
+    public required string Consumables { get; set; }
+
+    /// <summary>
+    ///     The number of observer or sentry wards placed by the player during the match.
+    /// </summary>
+    [PhpProperty("wards")]
+    public required string Wards { get; set; }
+
+    /// <summary>
+    ///     The total time in seconds the player spent within experience range of dying enemy units.
+    /// </summary>
+    [PhpProperty("time_earning_exp")]
+    public required string TimeEarningExperience { get; set; }
+
+    /// <summary>
+    ///     The number of First Blood awards earned by the player (1 or 0).
+    /// </summary>
+    [PhpProperty("bloodlust")]
+    public required string FirstBlood { get; set; }
+
+    /// <summary>
+    ///     The number of Double Kill awards earned by the player (killing 2 heroes in quick succession).
+    /// </summary>
+    [PhpProperty("doublekill")]
+    public required string DoubleKill { get; set; }
+
+    /// <summary>
+    ///     The number of Triple Kill awards earned by the player (killing 3 heroes in quick succession).
+    /// </summary>
+    [PhpProperty("triplekill")]
+    public required string TripleKill { get; set; }
+
+    /// <summary>
+    ///     The number of Quad Kill awards earned by the player (killing 4 heroes in quick succession).
+    /// </summary>
+    [PhpProperty("quadkill")]
+    public required string QuadKill { get; set; }
+
+    /// <summary>
+    ///     The number of Annihilation awards earned by the player (killing all 5 enemy heroes in quick succession).
+    /// </summary>
+    [PhpProperty("annihilation")]
+    public required string Annihilation { get; set; }
+
+    /// <summary>
+    ///     The number of 3-kill streaks achieved by the player (killing 3 heroes without dying).
+    /// </summary>
+    [PhpProperty("ks3")]
+    public required string KillStreak3 { get; set; }
+
+    /// <summary>
+    ///     The number of 4-kill streaks achieved by the player (killing 4 heroes without dying).
+    /// </summary>
+    [PhpProperty("ks4")]
+    public required string KillStreak4 { get; set; }
+
+    /// <summary>
+    ///     The number of 5-kill streaks achieved by the player (killing 5 heroes without dying).
+    /// </summary>
+    [PhpProperty("ks5")]
+    public required string KillStreak5 { get; set; }
+
+    /// <summary>
+    ///     The number of 6-kill streaks achieved by the player (killing 6 heroes without dying).
+    /// </summary>
+    [PhpProperty("ks6")]
+    public required string KillStreak6 { get; set; }
+
+    /// <summary>
+    ///     The number of 7-kill streaks achieved by the player (killing 7 heroes without dying).
+    /// </summary>
+    [PhpProperty("ks7")]
+    public required string KillStreak7 { get; set; }
+
+    /// <summary>
+    ///     The number of 8-kill streaks achieved by the player (killing 8 heroes without dying).
+    /// </summary>
+    [PhpProperty("ks8")]
+    public required string KillStreak8 { get; set; }
+
+    /// <summary>
+    ///     The number of 9-kill streaks achieved by the player (killing 9 heroes without dying).
+    /// </summary>
+    [PhpProperty("ks9")]
+    public required string KillStreak9 { get; set; }
+
+    /// <summary>
+    ///     The number of 10-kill streaks achieved by the player (killing 10 heroes without dying).
+    /// </summary>
+    [PhpProperty("ks10")]
+    public required string KillStreak10 { get; set; }
+
+    /// <summary>
+    ///     The number of 15-kill streaks achieved by the player (killing 15 heroes without dying).
+    /// </summary>
+    [PhpProperty("ks15")]
+    public required string KillStreak15 { get; set; }
+
+    /// <summary>
+    ///     The number of Smackdown awards earned by the player (ending an enemy's kill streak).
+    /// </summary>
+    [PhpProperty("smackdown")]
+    public required string Smackdown { get; set; }
+
+    /// <summary>
+    ///     The number of Humiliation awards earned by the player (killing an enemy hero who is significantly higher level).
+    /// </summary>
+    [PhpProperty("humiliation")]
+    public required string Humiliation { get; set; }
+
+    /// <summary>
+    ///     The number of Nemesis awards earned by the player (being killed repeatedly by the same enemy hero).
+    /// </summary>
+    [PhpProperty("nemesis")]
+    public required string Nemesis { get; set; }
+
+    /// <summary>
+    ///     The number of Retribution awards earned by the player (killing an enemy hero who has killed you repeatedly).
+    /// </summary>
+    [PhpProperty("retribution")]
+    public required string Retribution { get; set; }
+
+    /// <summary>
+    ///     Whether the player used a token (game access token or dice token) during the match ("1" if used, "0" otherwise).
+    /// </summary>
+    [PhpProperty("used_token")]
+    public required string UsedToken { get; set; }
+
+    /// <summary>
+    ///     The hero identifier in the format Hero_{Snake_Case_Name} (e.g. "Hero_Andromeda", "Hero_Legionnaire").
+    /// </summary>
+    [PhpProperty("cli_name")]
+    public required string HeroIdentifier { get; set; }
+
+    /// <summary>
+    ///     The clan tag of the player's clan, or empty string if the player is not in a clan.
+    /// </summary>
+    [PhpProperty("tag")]
+    public required string ClanTag { get; set; }
+
+    /// <summary>
+    ///     The alternative avatar name used by the player during the match, or empty string if using the default hero skin.
+    /// </summary>
+    [PhpProperty("alt_avatar_name")]
+    public required string AlternativeAvatarName { get; set; }
+
+    /// <summary>
+    ///     Seasonal campaign progression information for the player in the match.
+    /// </summary>
+    [PhpProperty("campaign_info")]
+    public required SeasonProgress SeasonProgress { get; set; }
+}
+
+public class SeasonProgress
+{
+    /// <summary>
+    ///     The player's account ID.
+    /// </summary>
+    [PhpProperty("account_id")]
+    public required int AccountID { get; set; }
+
+    /// <summary>
+    ///     The unique identifier for the match.
+    /// </summary>
+    [PhpProperty("match_id")]
+    public required int MatchID { get; set; }
+
+    /// <summary>
+    ///     Whether the match was a casual ranked match ("1") or competitive ranked match ("0").
+    /// </summary>
+    [PhpProperty("is_casual")]
+    public required string IsCasual { get; set; }
+
+    /// <summary>
+    ///     The player's Matchmaking Rating (MMR) before the match.
+    /// </summary>
+    [PhpProperty("mmr_before")]
+    public required string MMRBefore { get; set; }
+
+    /// <summary>
+    ///     The player's Matchmaking Rating (MMR) after the match.
+    /// </summary>
+    [PhpProperty("mmr_after")]
+    public required string MMRAfter { get; set; }
+
+    /// <summary>
+    ///     The player's medal rank before the match.
+    ///     <code>
+    ///         00      -> Unranked
+    ///         01-05   -> Bronze   (V, IV, III, II, I)
+    ///         06-10   -> Silver   (V, IV, III, II, I)
+    ///         11-15   -> Gold     (V, IV, III, II, I)
+    ///         16-20   -> Diamond  (V, IV, III, II, I)
+    ///         21      -> Immortal
+    ///     </code>
+    /// </summary>
+    [PhpProperty("medal_before")]
+    public required string MedalBefore { get; set; }
+
+    /// <summary>
+    ///     The player's medal rank after the match.
+    ///     Uses the same medal ranking system as "medal_before".
+    /// </summary>
+    [PhpProperty("medal_after")]
+    public required string MedalAfter { get; set; }
+
+    /// <summary>
+    ///     The seasonal campaign identifier.
+    /// </summary>
+    [PhpProperty("season")]
+    public required string Season { get; set; }
+
+    /// <summary>
+    ///     The number of placement matches the player has completed in the current season.
+    ///     Players must complete placement matches before receiving their seasonal medal rank.
+    /// </summary>
+    [PhpProperty("placement_matches")]
+    public required int PlacementMatches { get; set; }
+
+    /// <summary>
+    ///     The number of placement matches won by the player in the current season.
+    /// </summary>
+    [PhpProperty("placement_wins")]
+    public required string PlacementWins { get; set; }
+
+    /// <summary>
+    ///     The player's current ranking position on the Immortal leaderboard.
+    ///     Only populated for Immortal rank players (medal 21) with a ranking between 1 and 100.
+    ///     Not present in the response for players below Immortal rank or outside the top 100.
+    /// </summary>
+    [PhpProperty("ranking")]
+    public string? Ranking { get; set; }
+}
+
+public class PlayerInventory
 {
     /// <summary>
     ///     The player's account ID.
